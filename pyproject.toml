@@ -1,0 +1,38 @@
+[project]
+name = "wide-logger"
+version = "0.1.0"
+description = "Wide, structured logging using Python's default logging module"
+license = "BSD-3-Clause"
+readme = "README.md"
+authors = [
+    {name = "Ian Beck", email = "ian@onecrayon.com"}
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Framework :: Django",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: System :: Logging",
+]
+
+[project.urls]
+Homepage = "https://github.com/onecrayon/wide-logger"
+Repository = "https://github.com/onecrayon/wide-logger.git"
+Issues = "https://github.com/onecrayon/wide-logger/issues"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff.lint]
+# Defaults plus isort
+select = ["E", "F", "I"]
