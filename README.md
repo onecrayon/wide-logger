@@ -188,4 +188,20 @@ also introduces a bit of memory overhead to track task relationships).
 
 ## Contributing
 
-TBD.
+Contributions are welcome, but for major changes please open an issue to discuss it first!
+
+In order to develop against the module locally:
+
+1. Install Poetry into your path: https://python-poetry.org/docs/#installation
+2. Install development dependencies: `poetry install`
+
+Once you have made any code changes, please run them through ruff for formatting prior to commiting:
+
+    poetry run ruff format
+
+Make sure that all tests pass, and if there is no longer full coverage add tests to cover your new
+functionality:
+
+    poetry run pytest --cov=wide_logger --cov-report=term:skip-covered --cov-report=html
+
+If you have full test coverage and your code is properly formatted, feel free to open a PR!
