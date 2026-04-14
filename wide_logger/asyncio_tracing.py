@@ -43,7 +43,7 @@ def _patched_create_task(*args, **kwargs) -> asyncio.Task:
     decorated code paths.
     """
     # If we don't have our original create_task, something has gone badly awry
-    if _original_create_task is None:
+    if _original_create_task is None:  # pragma: no cover
         raise RuntimeError(
             "WideLogger patched asyncio.create_task called prior to patch"
         )
