@@ -25,13 +25,19 @@ Issues = "https://github.com/onecrayon/wide-logger/issues"
 [dependency-groups]
 dev = [
     "pytest",
-    "ruff"
+    "ruff",
+    "pytest-asyncio",
+    "pytest-cov",
+    "django",
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.ruff.lint]
 # Defaults plus isort
