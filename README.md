@@ -30,6 +30,13 @@ log will match the highest level of logged event; that is, the above example wou
 INFO level, but if you also logged an event with `logger.error("...")` it would be output at the
 ERROR level instead.
 
+Wide Logger should be thread safe and is compatible with both sync and asyncio code paths. **Please
+note:** when using in an asyncio method, the global `asyncio.create_task()` method will be
+monkey-patched the first time any `@wide_logger` decorated async function is invoked, and it is
+never reverted! Under normal usage, this will have little to no impact, but if you are patching this
+method on your own (or are in a context where monkey-patching is undesirable or impossible), you
+need to be aware.
+
 ## When to use it
 
 Wide Logger is most appropriate either for projects that are already using Python's native logging
@@ -44,7 +51,7 @@ in your code long-term.
 1. Install `wide-logger` using your preferred dependency management tool; e.g. 
    `poetry add wide-logger`
 2. Modify your logging configuration to add the `WideLoggerHandlerFilter` to your preferred logger.
-   For instance, if your current logging configuration looks like this:
+   For instance, if your current logging configuration dict looks like this:
 
         LOGGING = {
             "version": 1,
@@ -77,10 +84,16 @@ in your code long-term.
                 },
             },
         }
-   
-   **IMPORTANT:** if you place the filter on a *logger* then it will only apply to messages sent
-   *through that logger*. You need to attach the filter to a handler in order to ensure it will
-   consume both propagated messages and messages logged directly to that logger.
+
+   If you are defining loggers programmatically, your final code will likely look something like
+   this instead:
+
+        handler = logging.StreamHandler()
+        handler.addFilter(WideLoggerHandlerFilter())
+        logging.getLogger().addHandler(handler)
+
+   **Important:** make sure to attach your filter to a Handler **NOT** to a Logger! See "Common
+   points of failure" below for more details.
 3. Decorate entrypoints that should opt into wide logging with `@wide_logger`:
 
         from wide_logger import wide_logger
@@ -89,11 +102,31 @@ in your code long-term.
         def method_with_wide_logging():
             ...
 
+   Note that you can invoke code that is decorated with `@wide_logger` from within outer decorated
+   code. When you do so, the outermost Wide Logger will be used for all events.
+
+### Common points of failure
+
 The only requirement for a given codepath to be able to add events to the wide logger is that it
 uses or propagates to a logger with the handler using the filter you added in step 2, and it is
 called as part of a code stack that is wrapped with the `@wide_logger` decorator. This means that if
 you put your filter on a root handler, all logged content in your project will be output as wide,
-structured logs when accessed through the `@wide_logger` decorator.
+structured logs when accessed through the `@wide_logger` decorator. Conversely, attaching the filter
+to a handler attached to a non-root logger is a likely point of failure as you must then update both
+your defined loggers to opt-into that logger, and add `@wide_logger` decorators.
+
+If you are using Wide Logger in an async context, any tasks that are *not* awaited will have their
+connection to the wide logging logic cut if the outer code completes before them, resulting in any
+logs they generate after that point falling through to the standard logging logic. As a result,
+fire-and-forget async architecture is not appropriate for wide logging.
+
+### Filtering on loggers instead of handlers
+
+If you place the filter on a *logger* then it will only apply to messages sent *through that
+logger*. You need to attach the filter to a handler in order to ensure it will consume both
+propagated messages and messages logged directly to that logger. This is because Python
+loggers only filter messages that are sent directly to that logger; messages that have propagated
+are assumed to have been filtered by the child logger.
 
 ### Using Django middleware
 
@@ -119,8 +152,10 @@ To add context to your logs, pass contextual information alongside a normal log 
     logger.info("Processing foo", extra={"foo": foo.id})
 
 By default, context items will be populated in the root-level `"context"` property of your final
-structured log, unless that key is already set and the value is not equal based on a Python `==`
-test in which case it will be populated in a `"context"` property nested within that event.
+structured log. If that key is already set and the value is the same, it will be ignored (meaning
+it is safe to repeat identical `extra` calls in successive logs). If the value is not equal based on
+a Python `==` test the context item will instead be populated in a `"context"` property nested
+within the specific log event.
 
 If you would like all context to be nested in events (without any attempt to prevent duplicate
 entries across events), you can do so via the decorator:
@@ -131,12 +166,17 @@ entries across events), you can do so via the decorator:
 
 You can customize logging behavior by passing parameters to the `@wide_logger` decorator:
 
-* `context={"key": "value"}`: pre-populate your log's context object with static values.
+* `context={"key": "value"}`: pre-populate your log's root context object. This is appropriate for
+  static values known at the time of decoration, but typically you will instead pass context values
+  through the `extra` keyword argument of your individual log calls.
 * `use_root_context=False`: as described above, this will opt out of the root-level context property
   and store all context within events (without attempting to avoid duplicate entries).
 * `output_logger="logger.name"`: explicitly choose which logger you wish to use for the final
-  structured log. If unspecified, it will be default to the earliest occurring, highest-level logger
-  used to log events.
+  structured log. If unspecified, it will be dynamically chosen based on what loggers were used to
+  add events to the wide logger instance, with the logger with the least amount of nesting
+  preferred. E.g. if you log from "app", "app.module", and the root logger, the root logger will be
+  used. If you log from multiple loggers at the highest level of hierarchy, the earliest will be
+  used (e.g. if you log first from "app" then from "other_app", "app" will be used).
 
 ## Customizing output via Formatters
 
@@ -152,7 +192,7 @@ your logs in some other format (e.g. logfmt or similar), you can do like so:
     from wide_logger import WideLogger
     
     class CustomFormatter(logging.Formatter):
-        def format(record: logging.LogRecord) -> str:
+        def format(self, record: logging.LogRecord) -> str:
             if isinstance(record.msg, WideLogger):
                 # Generate a custom str representation of the wide log
                 ...
@@ -177,14 +217,14 @@ This has a couple important side effects:
    want to use wide logging on code paths where the included decorator method is inappropriate, the
    option is there.
 
-### asyncio support
+### asyncio monkey-patching
 
-Wide Logging can be used in asyncio contexts, but note that in order to do so it *monkey-patches
-asyncio.create_task*. This is necessary because creating a task breaks stack frame boundaries (and
-this happens implicitly when you invoke code like `await my_coroutine()`). To get around this, the
-monkey-patch will store parent/child references for all asyncio tasks, along with any relevant
-WideLogger instances (so in addition to the overhead already created by its standard behavior it
-also introduces a bit of memory overhead to track task relationships).
+As mentioned above, in asyncio contexts the `asyncio.create_task()` method is monkey-patched the
+first time an async function decorated with `@wide_logger` is invoked. The reason for this is that
+creating a task breaks stack frame boundaries (and this happens implicitly when you invoke code like
+`await my_coroutine()`). To get around this, the monkey-patch will store parent/child references for
+all asyncio tasks with associated Wide Loggers (so in addition to the overhead already created by
+its standard behavior it also introduces a bit of memory overhead to track task relationships).
 
 ## Contributing
 
