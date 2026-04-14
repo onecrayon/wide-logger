@@ -218,15 +218,14 @@ def wide_logger_for_stack() -> WideLogger | None:
     leaks as they are not by default garbage collected.
     """
     wide_logger = None
-    frame = inspect.currentframe()
-    while frame:
-        if "__wide_logger__" in frame.f_locals:
-            wide_logger: WideLogger = frame.f_locals["__wide_logger__"]
-            break
-        past_frame = frame.f_back
+    try:
+        frame = inspect.currentframe()
+        while frame:
+            if "__wide_logger__" in frame.f_locals:
+                return frame.f_locals["__wide_logger__"]
+            frame = frame.f_back
+    finally:
         del frame
-        frame = past_frame
-    del frame
     return wide_logger
 
 

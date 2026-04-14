@@ -9,6 +9,7 @@ These global variables are used to allow us to toggle the patch on or off at wil
 generally it will simply be enabled the first time we invoke `@wide_logger` in an async context
 and then never be reverted).
 """
+
 import asyncio
 from typing import Callable, Optional
 
@@ -87,14 +88,14 @@ def disable_asyncio_tracing():
     Not currently used by the project outside of testing, as disabling async support has no
     appreciable benefit under normal usage.
     """
-    global _original_create_task, _is_asyncio_tracing_enabled, _task_tree
+    global _original_create_task, _is_asyncio_tracing_enabled
     if not _is_asyncio_tracing_enabled:
         return
 
     asyncio.create_task = _original_create_task
     _is_asyncio_tracing_enabled = False
     _original_create_task = None
-    _task_tree = {}
+    _task_tree.clear()
 
 
 def wide_logger_for_asyncio_stack() -> Optional[WideLogger]:
@@ -118,8 +119,10 @@ def finalize_wide_logged_asyncio_stack():
     """
     task = asyncio.current_task()
     # Walk up the tree to find our outermost parent
+    root_task = task
     parent_task = _task_tree.get(task, {}).get("parent")
     while parent_task in _task_tree:
+        root_task = parent_task
         parent_task = _task_tree[parent_task].get("parent")
     # Now that we have our root parent, recursively clear all child tasks
-    _clear_task_tree(parent_task)
+    _clear_task_tree(root_task)
